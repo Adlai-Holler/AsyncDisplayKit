@@ -8,6 +8,7 @@
 
 #import <AsyncDisplayKit/ASDisplayNode.h>
 
+NS_ASSUME_NONNULL_BEGIN
 
 /**
  * Generic cell node.  Subclass this instead of `ASDisplayNode` to use with `ASTableView` and `ASCollectionView`.
@@ -66,3 +67,5 @@
 @property (nonatomic, copy) NSString *text;
 
 @end
+
+NS_ASSUME_NONNULL_END
