@@ -29,7 +29,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
   NSMutableArray *_editingNodes;              // Modified on _editingTransactionQueue only.  Updates propogated to _completedNodes.
   
   NSMutableArray *_pendingEditCommandBlocks;  // To be run on the main thread.  Handles begin/endUpdates tracking.
-  NSOperationQueue *_editingTransactionQueue; // Serial background queue.  Dispatches concurrent layout and manages _editingNodes.
+  NSOperationQueue *_editingTransactionQueue; // Serial background queue.  Dispatches concurrent measurement and manages _editingNodes.
   
   BOOL _asyncDataFetchingEnabled;
   BOOL _delegateDidInsertNodes;
@@ -94,16 +94,14 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
   return parallelProcessorCount;
 }
 
-#pragma mark - Cell Layout
+#pragma mark - Cell Measurement
 
 /*
- * FIXME: Shouldn't this method, as well as `_layoutNodes:atIndexPaths:withAnimationOptions:` use the word "measure" instead?
- *
- * Once nodes have loaded their views, we can't layout in the background so this is a chance
+ * Once nodes have loaded their views, we can't measure in the background so this is a chance
  * to do so immediately on the main thread.
  */
-- (void)_layoutNodesWithMainThreadAffinity:(NSArray *)nodes atIndexPaths:(NSArray *)indexPaths {
-  NSAssert(NSThread.isMainThread, @"Main thread layout must be on the main thread.");
+- (void)_measureNodesWithMainThreadAffinity:(NSArray *)nodes atIndexPaths:(NSArray *)indexPaths {
+  NSAssert(NSThread.isMainThread, @"Main thread measurement must be on the main thread.");
   
   [indexPaths enumerateObjectsUsingBlock:^(NSIndexPath *indexPath, NSUInteger idx, __unused BOOL * stop) {
     ASCellNode *node = nodes[idx];
@@ -115,15 +113,15 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
   }];
 }
 
-- (void)_layoutNodes:(NSArray *)nodes atIndexPaths:(NSArray *)indexPaths withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
+- (void)_measureNodes:(NSArray *)nodes atIndexPaths:(NSArray *)indexPaths withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
-  ASDisplayNodeAssert([NSOperationQueue currentQueue] == _editingTransactionQueue, @"Cell node layout must be initiated from edit transaction queue");
+  ASDisplayNodeAssert([NSOperationQueue currentQueue] == _editingTransactionQueue, @"Cell node measurement must be initiated from edit transaction queue");
   
   if (!nodes.count) {
     return;
   }
   
-  dispatch_group_t layoutGroup = dispatch_group_create();
+  dispatch_group_t measurementGroup = dispatch_group_create();
   ASSizeRange *nodeBoundSizes = (ASSizeRange *)malloc(sizeof(ASSizeRange) * nodes.count);
   for (NSUInteger j = 0; j < nodes.count && j < indexPaths.count; j += kASDataControllerSizingCountPerProcessor) {
     NSInteger batchCount = MIN(kASDataControllerSizingCountPerProcessor, indexPaths.count - j);
@@ -135,11 +133,11 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
       }
     }
     
-    dispatch_group_async(layoutGroup, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    dispatch_group_async(measurementGroup, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
       for (NSUInteger k = j; k < j + batchCount; k++) {
         ASCellNode *node = nodes[k];
         // Only measure nodes whose views aren't loaded, since we're in the background.
-        // We should already have measured loaded nodes before we left the main thread, using _layoutNodesWithMainThreadAffinity:
+        // We should already have measured loaded nodes before we left the main thread, using _measureNodesWithMainThreadAffinity:
         if (!node.isNodeLoaded) {
           ASSizeRange constrainedSize = nodeBoundSizes[k];
           [node measureWithSizeRange:constrainedSize];
@@ -149,14 +147,14 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
     });
   }
   
-  // Block the _editingTransactionQueue from executing a new edit transaction until layout is done & _editingNodes array is updated.
-  dispatch_group_wait(layoutGroup, DISPATCH_TIME_FOREVER);
+  // Block the _editingTransactionQueue from executing a new edit transaction until measurement is done & _editingNodes array is updated.
+  dispatch_group_wait(measurementGroup, DISPATCH_TIME_FOREVER);
   free(nodeBoundSizes);
   // Insert finished nodes into data storage
   [self _insertNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
 }
 
-- (void)_batchLayoutNodes:(NSArray *)nodes atIndexPaths:(NSArray *)indexPaths withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
+- (void)_batchMeasureNodes:(NSArray *)nodes atIndexPaths:(NSArray *)indexPaths withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
   NSUInteger blockSize = [[ASDataController class] parallelProcessorCount] * kASDataControllerSizingCountPerProcessor;
   
@@ -166,7 +164,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
     NSArray *batchedIndexPaths = [indexPaths subarrayWithRange:batchedRange];
     NSArray *batchedNodes = [nodes subarrayWithRange:batchedRange];
     
-    [self _layoutNodes:batchedNodes atIndexPaths:batchedIndexPaths withAnimationOptions:animationOptions];
+    [self _measureNodes:batchedNodes atIndexPaths:batchedIndexPaths withAnimationOptions:animationOptions];
   }
 }
 
@@ -272,7 +270,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
       [self _populateFromEntireDataSourceWithMutableNodes:updatedNodes mutableIndexPaths:updatedIndexPaths];
       
       // Measure nodes whose views are loaded before we leave the main thread
-      [self _layoutNodesWithMainThreadAffinity:updatedNodes atIndexPaths:updatedIndexPaths];
+      [self _measureNodesWithMainThreadAffinity:updatedNodes atIndexPaths:updatedIndexPaths];
       
       [_editingTransactionQueue addOperationWithBlock:^{
         LOG(@"Edit Transaction - reloadData");
@@ -292,7 +290,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
         
         [self _insertSections:sections atIndexSet:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, sectionCount)] withAnimationOptions:animationOptions];
         
-        [self _batchLayoutNodes:updatedNodes atIndexPaths:updatedIndexPaths withAnimationOptions:animationOptions];
+        [self _batchMeasureNodes:updatedNodes atIndexPaths:updatedIndexPaths withAnimationOptions:animationOptions];
         
         if (completion) {
           dispatch_async(dispatch_get_main_queue(), completion);
@@ -429,7 +427,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
       [self _populateFromDataSourceWithSectionIndexSet:indexSet mutableNodes:updatedNodes mutableIndexPaths:updatedIndexPaths];
       
       // Measure nodes whose views are loaded before we leave the main thread
-      [self _layoutNodesWithMainThreadAffinity:updatedNodes atIndexPaths:updatedIndexPaths];
+      [self _measureNodesWithMainThreadAffinity:updatedNodes atIndexPaths:updatedIndexPaths];
       
       [_editingTransactionQueue addOperationWithBlock:^{
         LOG(@"Edit Transaction - insertSections: %@", indexSet);
@@ -439,7 +437,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
         }
         
         [self _insertSections:sectionArray atIndexSet:indexSet withAnimationOptions:animationOptions];
-        [self _batchLayoutNodes:updatedNodes atIndexPaths:updatedIndexPaths withAnimationOptions:animationOptions];
+        [self _batchMeasureNodes:updatedNodes atIndexPaths:updatedIndexPaths withAnimationOptions:animationOptions];
       }];
     }];
   }];
@@ -481,7 +479,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
       // at this time.  Thus _editingNodes could be empty and crash in ASIndexPathsForMultidimensional[...]
       
       // Measure nodes whose views are loaded before we leave the main thread
-      [self _layoutNodesWithMainThreadAffinity:updatedNodes atIndexPaths:updatedIndexPaths];
+      [self _measureNodesWithMainThreadAffinity:updatedNodes atIndexPaths:updatedIndexPaths];
       
       [_editingTransactionQueue addOperationWithBlock:^{
         NSArray *indexPaths = ASIndexPathsForMultidimensionalArrayAtIndexSet(_editingNodes, sections);
@@ -491,7 +489,7 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
         [self _deleteNodesAtIndexPaths:indexPaths withAnimationOptions:animationOptions];
         
         // reinsert the elements
-        [self _batchLayoutNodes:updatedNodes atIndexPaths:updatedIndexPaths withAnimationOptions:animationOptions];
+        [self _batchMeasureNodes:updatedNodes atIndexPaths:updatedIndexPaths withAnimationOptions:animationOptions];
       }];
     }];
   }];
@@ -546,11 +544,11 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
       }
       
       // Measure nodes whose views are loaded before we leave the main thread
-      [self _layoutNodesWithMainThreadAffinity:nodes atIndexPaths:indexPaths];
+      [self _measureNodesWithMainThreadAffinity:nodes atIndexPaths:indexPaths];
       
       [_editingTransactionQueue addOperationWithBlock:^{
         LOG(@"Edit Transaction - insertRows: %@", indexPaths);
-        [self _batchLayoutNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
+        [self _batchMeasureNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
       }];
     }];
   }];
@@ -596,25 +594,25 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
       }
       
       // Measure nodes whose views are loaded before we leave the main thread
-      [self _layoutNodesWithMainThreadAffinity:nodes atIndexPaths:indexPaths];
+      [self _measureNodesWithMainThreadAffinity:nodes atIndexPaths:indexPaths];
 
       [_editingTransactionQueue addOperationWithBlock:^{
         LOG(@"Edit Transaction - reloadRows: %@", indexPaths);
         [self _deleteNodesAtIndexPaths:indexPaths withAnimationOptions:animationOptions];
-        [self _batchLayoutNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
+        [self _batchMeasureNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
       }];
     }];
   }];
 }
 
-- (void)relayoutAllRows
+- (void)remeasureAllRows
 {
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
-    LOG(@"Edit Command - relayoutRows");
+    LOG(@"Edit Command - remeasureRows");
     [_editingTransactionQueue waitUntilAllOperationsAreFinished];
     
-    void (^relayoutNodesBlock)(NSMutableArray *) = ^void(NSMutableArray *nodes) {
+    void (^remeasureNodesBlock)(NSMutableArray *) = ^void(NSMutableArray *nodes) {
       if (!nodes.count) {
         return;
       }
@@ -631,12 +629,12 @@ static void *kASSizingQueueContext = &kASSizingQueueContext;
       }];
     };
 
-    // Can't relayout right away because _completedNodes may not be up-to-date,
+    // Can't remeasure right away because _completedNodes may not be up-to-date,
     // i.e there might be some nodes that were measured using the old constrained size but haven't been added to _completedNodes
-    // (see _layoutNodes:atIndexPaths:withAnimationOptions:).
+    // (see _measureNodes:atIndexPaths:withAnimationOptions:).
     [_editingTransactionQueue addOperationWithBlock:^{
       ASDisplayNodePerformBlockOnMainThread(^{
-        relayoutNodesBlock(_completedNodes);
+        remeasureNodesBlock(_completedNodes);
       });
     }];
   }];
