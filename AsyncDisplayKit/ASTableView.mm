@@ -899,11 +899,12 @@ static BOOL _isInterceptedSelector(SEL sel)
 
 - (void)node:(ASCellNode *)node didRelayoutWithSuggestedAnimation:(ASCellNodeAnimation)animation
 {
-  ASDisplayNodeAssertMainThread();
-  NSIndexPath *indexPath = [self indexPathForNode:node];
-  if (indexPath != nil) {
-    [super reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:(UITableViewRowAnimation)animation];
-  }
+//  Removed by Adlai Holler: Causes text views inside cell nodes to be dismissed and contents to flash
+//  ASDisplayNodeAssertMainThread();
+//  NSIndexPath *indexPath = [self indexPathForNode:node];
+//  if (indexPath != nil) {
+//    [super reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:(UITableViewRowAnimation)animation];
+//  }
 }
 
 @end
