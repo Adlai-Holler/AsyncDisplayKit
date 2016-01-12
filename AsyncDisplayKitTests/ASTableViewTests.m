@@ -58,6 +58,7 @@
 
 @interface ASTableViewTestDelegate : NSObject <ASTableViewDataSource, ASTableViewDelegate>
 @property (atomic, copy) void (^willDeallocBlock)(ASTableViewTestDelegate *delegate);
+@property (atomic, copy) void (^didEndDisplayingNodeBlock)(ASTableViewTestDelegate *delegate, NSIndexPath *indexPath);
 @end
 
 @implementation ASTableViewTestDelegate
@@ -70,6 +71,13 @@
 - (ASCellNode *)tableView:(ASTableView *)tableView nodeForRowAtIndexPath:(NSIndexPath *)indexPath
 {
   return nil;
+}
+
+- (void)tableView:(ASTableView *)tableView didEndDisplayingNodeForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+  if (_didEndDisplayingNodeBlock) {
+    _didEndDisplayingNodeBlock(self, indexPath);
+  }
 }
 
 - (void)dealloc
@@ -94,6 +102,24 @@
     _numberOfLayoutsOnMainThread++;
   }
   return [super layoutSpecThatFits:constrainedSize];
+}
+
+@end
+
+@interface ASTableViewArrayDataSource : NSObject <ASTableViewDataSource>
+@property (nonatomic, strong) NSArray <ASCellNode *> *nodes;
+@end
+
+@implementation ASTableViewArrayDataSource
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+  return _nodes.count;
+}
+
+- (ASCellNode *)tableView:(ASTableView *)tableView nodeForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+  return _nodes[indexPath.item];
 }
 
 @end
@@ -381,6 +407,57 @@
     [relayoutExpectation fulfill];
   }];
   [self waitForExpectationsWithTimeout:5 handler:^(NSError *error) {
+    if (error) {
+      XCTFail(@"Expectation failed: %@", error);
+    }
+  }];
+}
+
+- (void)testThatDidEndDisplayingIndicatesWhichNodeIsGone
+{
+  CGSize tableViewSize = CGSizeMake(100, 500);
+  ASTestTableView *tableView = [[ASTestTableView alloc] initWithFrame:CGRectMake(0, 0, tableViewSize.width, tableViewSize.height)
+                                                                style:UITableViewStylePlain
+                                                    asyncDataFetching:YES];
+  ASTableViewTestDelegate *delegate = [ASTableViewTestDelegate new];
+  tableView.asyncDelegate = delegate;
+
+  ASTableViewArrayDataSource *dataSource = [ASTableViewArrayDataSource new];
+  ASTestTextCellNode *oldNode = [ASTestTextCellNode new];
+  oldNode.text = @"Old node";
+  dataSource.nodes = @[ oldNode ];
+
+  tableView.asyncDataSource = dataSource;
+
+  delegate.didEndDisplayingNodeBlock = ^(ASTableViewTestDelegate *delegate, NSIndexPath *indexPath) {
+    ASDisplayNode *goneNode = [tableView nodeForRowAtIndexPath:indexPath];
+    XCTAssert(goneNode == oldNode);
+  };
+
+  XCTestExpectation *reloadDataExpectation = [self expectationWithDescription:@"reloadData"];
+  [tableView reloadDataWithCompletion:^{
+    [reloadDataExpectation fulfill];
+  }];
+  [self waitForExpectationsWithTimeout:5 handler:^(NSError *error) {
+    if (error) {
+      XCTFail(@"Expectation failed: %@", error);
+    }
+  }];
+
+  XCTestExpectation *updateExpectation = [self expectationWithDescription:@"update"];
+
+  [tableView beginUpdates];
+  ASTestTextCellNode *newNode = [ASTestTextCellNode new];
+  newNode.text = @"New node";
+  dataSource.nodes = @[ newNode ];
+
+  [tableView deleteRowsAtIndexPaths:@[ [NSIndexPath indexPathForItem:0 inSection:0] ] withRowAnimation:UITableViewRowAnimationNone];
+  [tableView insertRowsAtIndexPaths:@[ [NSIndexPath indexPathForItem:0 inSection:0] ] withRowAnimation:UITableViewRowAnimationNone];
+  [tableView endUpdatesAnimated:NO completion:^(BOOL completed) {
+    [updateExpectation fulfill];
+  }];
+
+  [self waitForExpectationsWithTimeout:5 handler:^(NSError * _Nullable error) {
     if (error) {
       XCTFail(@"Expectation failed: %@", error);
     }
