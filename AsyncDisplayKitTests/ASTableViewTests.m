@@ -99,6 +99,7 @@
 @end
 
 @interface ASTableViewFilledDataSource : NSObject <ASTableViewDataSource, ASTableViewDelegate>
+@property (nonatomic, copy, nullable) dispatch_block_t onNodeForRowAtIndexPath;
 @end
 
 @implementation ASTableViewFilledDataSource
@@ -115,6 +116,9 @@
 
 - (ASCellNode *)tableView:(ASTableView *)tableView nodeForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+  if (self.onNodeForRowAtIndexPath != nil) {
+    self.onNodeForRowAtIndexPath();
+  }
   ASTestTextCellNode *textCellNode = [ASTestTextCellNode new];
   textCellNode.text = indexPath.description;
   
@@ -385,6 +389,26 @@
       XCTFail(@"Expectation failed: %@", error);
     }
   }];
+}
+
+- (void)testThatDataSourceCountsAreCorrectDuringNodeForRowAtIndexPath {
+  CGSize tableViewSize = CGSizeMake(100, 500);
+  ASTestTableView *tableView = [[ASTestTableView alloc] initWithFrame:CGRectMake(0, 0, tableViewSize.width, tableViewSize.height)
+                                                                style:UITableViewStylePlain];
+  ASTableViewFilledDataSource *dataSource = [ASTableViewFilledDataSource new];
+  __weak __typeof(dataSource) weakDataSource = dataSource;
+  __block BOOL nodeForRowWasCalled = NO;
+  dataSource.onNodeForRowAtIndexPath = ^{
+    if (!nodeForRowWasCalled) {
+      nodeForRowWasCalled = YES;
+      XCTAssertEqual(tableView.numberOfSections, [weakDataSource numberOfSectionsInTableView:tableView]);
+      XCTAssertEqual([tableView numberOfRowsInSection:0], [weakDataSource tableView:tableView numberOfRowsInSection:0]);
+    }
+  };
+  tableView.asyncDelegate = dataSource;
+  tableView.asyncDataSource = dataSource;
+  [tableView layoutSubviews];
+  XCTAssertTrue(nodeForRowWasCalled);
 }
 
 - (void)testIndexPathForNode

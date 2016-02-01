@@ -15,6 +15,8 @@
 @property (nonatomic, assign) NSInteger numberOfSections;
 @property (nonatomic, assign) NSInteger numberOfItemsInSection;
 
+@property (nonatomic, copy, nullable) dispatch_block_t onNodeForItemAtIndexPath;
+
 @end
 
 @implementation ASCollectionViewTestDelegate
@@ -29,6 +31,10 @@
 }
 
 - (ASCellNode *)collectionView:(ASCollectionView *)collectionView nodeForItemAtIndexPath:(NSIndexPath *)indexPath {
+  if (self.onNodeForItemAtIndexPath != nil) {
+    self.onNodeForItemAtIndexPath();
+  }
+
   ASTextCellNode *textCellNode = [ASTextCellNode new];
   textCellNode.text = indexPath.description;
 
@@ -108,6 +114,25 @@
   ASCollectionView *collectionView = [[ASCollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
   [collectionView registerSupplementaryNodeOfKind:UICollectionElementKindSectionHeader];
   XCTAssertEqualObjects([collectionView supplementaryNodeKindsInDataController:nil], @[UICollectionElementKindSectionHeader]);
+}
+
+- (void)testThatDataSourceCountsAreCorrectDuringNodeForRowAtIndexPath {
+  ASCollectionViewTestDelegate *delegate = [[ASCollectionViewTestDelegate alloc] initWithNumberOfSections:10 numberOfItemsInSection:10];
+  UICollectionViewLayout *layout = [[UICollectionViewLayout alloc] init];
+  ASCollectionView *view = [[ASCollectionView alloc] initWithFrame:CGRectMake(0, 0, 100, 100) collectionViewLayout:layout];
+  __block BOOL onNodeForItemWasCalled = NO;
+  __weak __typeof(delegate) weakDelegate = delegate;
+  delegate.onNodeForItemAtIndexPath = ^{
+    if (!onNodeForItemWasCalled) {
+      onNodeForItemWasCalled = YES;
+      XCTAssertEqual(view.numberOfSections, weakDelegate.numberOfSections);
+      XCTAssertEqual([view numberOfItemsInSection:0], weakDelegate.numberOfItemsInSection);
+    }
+  };
+  view.asyncDataSource = delegate;
+  view.asyncDelegate = delegate;
+  [view layoutSubviews];
+  XCTAssertTrue(onNodeForItemWasCalled);
 }
 
 - (void)testCollectionViewController
