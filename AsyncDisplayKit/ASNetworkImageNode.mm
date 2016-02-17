@@ -44,7 +44,8 @@
   BOOL _downloaderImplementsSetProgress;
   BOOL _downloaderImplementsSetPriority;
   
-  BOOL _cacheSupportsNewProtocol;
+  BOOL _cacheSupportsNewFetchMethod;
+  BOOL _cacheSupportsOldFetchMethod;
   BOOL _cacheSupportsClearing;
 }
 @end
@@ -63,12 +64,11 @@
   
   _downloaderSupportsNewProtocol = [downloader respondsToSelector:@selector(downloadImageWithURL:callbackQueue:downloadProgress:completion:)];
   
-  ASDisplayNodeAssert([cache respondsToSelector:@selector(cachedImageWithURL:callbackQueue:completion:)] || [cache respondsToSelector:@selector(fetchCachedImageWithURL:callbackQueue:completion:)], @"cacher must respond to either cachedImageWithURL:callbackQueue:completion: or fetchCachedImageWithURL:callbackQueue:completion:");
-  
   _downloaderImplementsSetProgress = [downloader respondsToSelector:@selector(setProgressImageBlock:callbackQueue:withDownloadIdentifier:)];
   _downloaderImplementsSetPriority = [downloader respondsToSelector:@selector(setPriority:withDownloadIdentifier:)];
   
-  _cacheSupportsNewProtocol = [cache respondsToSelector:@selector(cachedImageWithURL:callbackQueue:completion:)];
+  _cacheSupportsNewFetchMethod = [cache respondsToSelector:@selector(cachedImageWithURL:callbackQueue:completion:)];
+  _cacheSupportsOldFetchMethod = [cache respondsToSelector:@selector(fetchCachedImageWithURL:callbackQueue:completion:)];
   _cacheSupportsClearing = [cache respondsToSelector:@selector(clearFetchedImageFromCacheWithURL:)];
   
   _shouldCacheImage = YES;
@@ -373,11 +373,11 @@
           }
         };
         
-        if (_cacheSupportsNewProtocol) {
+        if (_cacheSupportsNewFetchMethod) {
           [_cache cachedImageWithURL:_URL
                        callbackQueue:dispatch_get_main_queue()
                           completion:cacheCompletion];
-        } else {
+        } else if (_cacheSupportsOldFetchMethod) {
           [_cache fetchCachedImageWithURL:_URL
                             callbackQueue:dispatch_get_main_queue()
                                completion:^(CGImageRef image) {
