@@ -97,8 +97,8 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 {
   _scrollDirection = scrollDirection;
 
-  // Perform update immediately, so that cells receive a visibleStateDidChange: call before their first pixel is visible.
-  [self scheduleRangeUpdate];
+  // Perform update immediately, so that cells receive a visibilityDidChange: call before their first pixel is visible.
+  [self performRangeUpdateSynchronously:YES];
 }
 
 - (void)updateCurrentRangeWithMode:(ASLayoutRangeMode)rangeMode
@@ -107,30 +107,21 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
     _currentRangeMode = rangeMode;
     _didUpdateCurrentRange = YES;
     
-    [self scheduleRangeUpdate];
+    [self performRangeUpdateSynchronously:YES];
   }
 }
 
-- (void)scheduleRangeUpdate
+- (void)performRangeUpdateSynchronously:(BOOL)updateSynchronously
 {
-  if (_queuedRangeUpdate) {
-    return;
+  if (updateSynchronously) {
+    ASDisplayNodeAssertMainThread();
+    [self _updateVisibleNodeIndexPaths];
+  } else if (!_queuedRangeUpdate) {
+    _queuedRangeUpdate = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self _updateVisibleNodeIndexPaths];
+    });
   }
-  
-  // coalesce these events -- handling them multiple times per runloop is noisy and expensive
-  _queuedRangeUpdate = YES;
-  
-  dispatch_async(dispatch_get_main_queue(), ^{
-    [self performRangeUpdate];
-  });
-}
-
-- (void)performRangeUpdate
-{
-  // Call this version if you want the update to occur immediately, such as on app suspend, as another runloop may not occur.
-  ASDisplayNodeAssertMainThread();
-  _queuedRangeUpdate = YES; // For now, set this flag as _update... expects it and clears it.
-  [self _updateVisibleNodeIndexPaths];
 }
 
 - (void)setLayoutController:(id<ASLayoutController>)layoutController
@@ -138,7 +129,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   _layoutController = layoutController;
   _layoutControllerImplementsSetVisibleIndexPaths = [_layoutController respondsToSelector:@selector(setVisibleNodeIndexPaths:)];
   if (_layoutController && _queuedRangeUpdate) {
-    [self performRangeUpdate];
+    [self performRangeUpdateSynchronously:YES];
   }
 }
 
@@ -146,14 +137,14 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 {
   _dataSource = dataSource;
   if (_dataSource && _queuedRangeUpdate) {
-    [self performRangeUpdate];
+    [self performRangeUpdateSynchronously:YES];
   }
 }
 
 - (void)_updateVisibleNodeIndexPaths
 {
   ASDisplayNodeAssert(_layoutController, @"An ASLayoutController is required by ASRangeController");
-  if (!_queuedRangeUpdate || !_layoutController || !_dataSource) {
+  if (!_layoutController || !_dataSource) {
     return;
   }
   
@@ -361,7 +352,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
     [[NSNotificationCenter defaultCenter] removeObserver:self name:ASRenderingEngineDidDisplayScheduledNodesNotification object:nil];
     _didRegisterForNotifications = NO;
     
-    [self scheduleRangeUpdate];
+    [self performRangeUpdateSynchronously:NO];
   }
 }
 
@@ -507,7 +498,6 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
   for (ASRangeController *rangeController in allRangeControllers) {
     BOOL isDisplay = ASInterfaceStateIncludesDisplay([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isDisplay ? ASLayoutRangeModeMinimum : __rangeModeForMemoryWarnings];
-    [rangeController performRangeUpdate];
   }
   
 #if ASRangeControllerLoggingEnabled
@@ -523,14 +513,11 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
     // the app is resumed.  Non-visible controllers can be more aggressively culled to the LowMemory state (see definitions for documentation)
     BOOL isVisible = ASInterfaceStateIncludesVisible([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isVisible ? ASLayoutRangeModeVisibleOnly : ASLayoutRangeModeLowMemory];
+    // N.b. we intentionally don't call `performRangeUpdate` because `updateCurrentRangeWithMode` does so if needed.
   }
   
   // Because -interfaceState checks __ApplicationState and always clears the "visible" bit if Backgrounded, we must set this after updating the range mode.
   __ApplicationState = UIApplicationStateBackground;
-  for (ASRangeController *rangeController in allRangeControllers) {
-    // Trigger a range update immediately, as we may not be allowed by the system to run the update block scheduled by changing range mode.
-    [rangeController performRangeUpdate];
-  }
   
 #if ASRangeControllerLoggingEnabled
   NSLog(@"+[ASRangeController didEnterBackground] with controllers, after backgrounding: %@", allRangeControllers);
@@ -544,7 +531,7 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
   for (ASRangeController *rangeController in allRangeControllers) {
     BOOL isVisible = ASInterfaceStateIncludesVisible([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isVisible ? ASLayoutRangeModeMinimum : ASLayoutRangeModeVisibleOnly];
-    [rangeController performRangeUpdate];
+    // N.b. we intentionally don't call `performRangeUpdate` because `updateCurrentRangeWithMode` does so if needed.
   }
   
 #if ASRangeControllerLoggingEnabled

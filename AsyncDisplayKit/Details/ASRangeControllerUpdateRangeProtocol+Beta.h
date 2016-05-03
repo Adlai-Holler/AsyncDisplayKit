@@ -18,7 +18,8 @@
 @protocol ASRangeControllerUpdateRangeProtocol <NSObject>
 
 /**
- * Updates the current range mode of the range controller for at least the next range update.
+ * Updates the current range mode of the range controller for at least the next range update
+ * and, if the new mode is different from the previous mode, performs a range update immediately.
  */
 - (void)updateCurrentRangeWithMode:(ASLayoutRangeMode)rangeMode;
 
