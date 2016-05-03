@@ -833,19 +833,25 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 {
   ASDisplayNodeAssertMainThread();
   
+  CGRect bounds = self.bounds;
   // Calling indexPathsForVisibleRows will trigger UIKit to call reloadData if it never has, which can result
   // in incorrect layout if performed at zero size.  We can use the fact that nothing can be visible at zero size to return fast.
-  if (CGRectEqualToRect(self.bounds, CGRectZero)) {
+  if (CGRectEqualToRect(bounds, CGRectZero)) {
     return @[];
   }
   
-  // In this case we cannot use indexPathsForVisibleRows in this case to get all the visible index paths as apparently
-  // in a grouped UITableView it would return index paths for cells that are over the edge of the visible area.
-  // Unfortunatly this means we never get a call for -tableView:cellForRowAtIndexPath: for that cells, but we will mark
-  // mark them as visible in the range controller
-  NSMutableArray *visibleIndexPaths = [NSMutableArray array];
-  for (id cell in self.visibleCells) {
-    [visibleIndexPaths addObject:[self indexPathForCell:cell]];
+  // Using self.visibleCells -> [self indexPathForCell:] sometimes returns nil
+  // if we are being called from a `-willDisplayCell:forRowAtIndexPath` call.
+  // At the same time, grouped UITableViews may return us index paths for
+  // cells that are outside the visible area, so we must manually filter them out.
+  NSArray *unfilteredIndexPaths = self.indexPathsForVisibleRows;
+  
+  NSMutableArray *visibleIndexPaths = [NSMutableArray arrayWithCapacity:unfilteredIndexPaths.count];
+  for (NSIndexPath *indexPath in unfilteredIndexPaths) {
+    CGRect rowRect = [self rectForRowAtIndexPath:indexPath];
+    if (CGRectIntersectsRect(rowRect, bounds)) {
+      [visibleIndexPaths addObject:indexPath];
+    }
   }
   
   if (_pendingVisibleIndexPath) {
