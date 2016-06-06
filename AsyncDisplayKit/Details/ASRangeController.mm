@@ -107,7 +107,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
     _currentRangeMode = rangeMode;
     _didUpdateCurrentRange = YES;
     
-    [self performRangeUpdateSynchronously:YES];
+    [self performRangeUpdateSynchronously:NO];
   }
 }
 
@@ -516,11 +516,14 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
     // the app is resumed.  Non-visible controllers can be more aggressively culled to the LowMemory state (see definitions for documentation)
     BOOL isVisible = ASInterfaceStateIncludesVisible([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isVisible ? ASLayoutRangeModeVisibleOnly : ASLayoutRangeModeLowMemory];
-    // N.b. we intentionally don't call `performRangeUpdate` because `updateCurrentRangeWithMode` does so if needed.
   }
   
   // Because -interfaceState checks __ApplicationState and always clears the "visible" bit if Backgrounded, we must set this after updating the range mode.
   __ApplicationState = UIApplicationStateBackground;
+  for (ASRangeController *rangeController in allRangeControllers) {
+    // Trigger a range update immediately, as we may not be allowed by the system to run the update block scheduled by changing range mode.
+    [rangeController performRangeUpdateSynchronously:YES];
+  }
   
 #if ASRangeControllerLoggingEnabled
   NSLog(@"+[ASRangeController didEnterBackground] with controllers, after backgrounding: %@", allRangeControllers);
@@ -534,7 +537,7 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
   for (ASRangeController *rangeController in allRangeControllers) {
     BOOL isVisible = ASInterfaceStateIncludesVisible([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isVisible ? ASLayoutRangeModeMinimum : ASLayoutRangeModeVisibleOnly];
-    // N.b. we intentionally don't call `performRangeUpdate` because `updateCurrentRangeWithMode` does so if needed.
+    [rangeController performRangeUpdateSynchronously:YES];
   }
   
 #if ASRangeControllerLoggingEnabled
