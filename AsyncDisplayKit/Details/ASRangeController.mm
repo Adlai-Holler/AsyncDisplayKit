@@ -115,11 +115,16 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 {
   if (updateSynchronously) {
     ASDisplayNodeAssertMainThread();
+    _queuedRangeUpdate = NO;
     [self _updateVisibleNodeIndexPaths];
   } else if (!_queuedRangeUpdate) {
     _queuedRangeUpdate = YES;
+    
     dispatch_async(dispatch_get_main_queue(), ^{
-      [self _updateVisibleNodeIndexPaths];
+      if (_queuedRangeUpdate) {
+        _queuedRangeUpdate = NO;
+        [self _updateVisibleNodeIndexPaths];
+      }
     });
   }
 }
@@ -157,7 +162,6 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   NSArray<NSIndexPath *> *visibleNodePaths = [_dataSource visibleNodeIndexPathsForRangeController:self];
   
   if (visibleNodePaths.count == 0) { // if we don't have any visibleNodes currently (scrolled before or after content)...
-    _queuedRangeUpdate = NO;
     return; // don't do anything for this update, but leave _rangeIsValid == NO to make sure we update it later
   }
   
@@ -311,7 +315,6 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   }
   
   _rangeIsValid = YES;
-  _queuedRangeUpdate = NO;
   
 #if ASRangeControllerLoggingEnabled
 //  NSSet *visibleNodePathsSet = [NSSet setWithArray:visibleNodePaths];
