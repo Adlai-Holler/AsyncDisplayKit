@@ -501,6 +501,7 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
   for (ASRangeController *rangeController in allRangeControllers) {
     BOOL isDisplay = ASInterfaceStateIncludesDisplay([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isDisplay ? ASLayoutRangeModeMinimum : __rangeModeForMemoryWarnings];
+    [rangeController performRangeUpdateSynchronously:YES];
   }
   
 #if ASRangeControllerLoggingEnabled
