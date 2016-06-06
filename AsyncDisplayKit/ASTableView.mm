@@ -25,6 +25,7 @@
 #import "ASRangeController.h"
 #import "ASRangeControllerUpdateRangeProtocol+Beta.h"
 #import "_ASDisplayLayer.h"
+#import "ASEqualityHelpers.h"
 
 #import <CoreFoundation/CoreFoundation.h>
 
@@ -628,9 +629,9 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   }
 }
 
-- (void)tableView:(UITableView *)tableView didEndDisplayingCell:(_ASTableViewCell *)cell forRowAtIndexPath:(NSIndexPath*)indexPath
+- (void)tableView:(UITableView *)tableView didEndDisplayingCell:(_ASTableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath
 {
-  if ([_pendingVisibleIndexPath isEqual:indexPath]) {
+  if (ASObjectIsEqual(_pendingVisibleIndexPath, indexPath)) {
     _pendingVisibleIndexPath = nil;
   }
   
@@ -643,9 +644,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
     [_asyncDelegate tableView:self didEndDisplayingNode:cellNode forRowAtIndexPath:indexPath];
   }
 
-  if ([_cellsForVisibilityUpdates containsObject:cell]) {
-    [_cellsForVisibilityUpdates removeObject:cell];
-  }
+  [_cellsForVisibilityUpdates removeObject:cell];
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
