@@ -19,7 +19,7 @@
 
 /**
  * Updates the current range mode of the range controller for at least the next range update
- * and, if the new mode is different from the previous mode, performs a range update immediately.
+ * and, if the new mode is different from the previous mode, enqueues a range update.
  */
 - (void)updateCurrentRangeWithMode:(ASLayoutRangeMode)rangeMode;
 
