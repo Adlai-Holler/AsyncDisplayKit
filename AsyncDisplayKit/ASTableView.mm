@@ -833,70 +833,36 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 {
   ASDisplayNodeAssertMainThread();
   
-  CGRect bounds = self.bounds;
   // Calling indexPathsForVisibleRows will trigger UIKit to call reloadData if it never has, which can result
   // in incorrect layout if performed at zero size.  We can use the fact that nothing can be visible at zero size to return fast.
-  if (CGRectEqualToRect(bounds, CGRectZero)) {
+  if (CGRectEqualToRect(self.bounds, CGRectZero)) {
     return @[];
   }
   
-  // Using self.visibleCells -> [self indexPathForCell:] sometimes returns nil
-  // if we are being called from a `-willDisplayCell:forRowAtIndexPath` call.
-  // At the same time, grouped UITableViews may return us index paths for
-  // cells that are outside the visible area, so we must manually filter them out.
-  NSArray *unfilteredIndexPaths = self.indexPathsForVisibleRows;
+  // NOTE: A prior comment claimed that `indexPathsForVisibleRows` may return extra index paths for grouped-style
+  // tables. This is seen as an acceptable issue for the time being.
   
-  NSMutableArray *visibleIndexPaths = [NSMutableArray arrayWithCapacity:unfilteredIndexPaths.count];
-  for (NSIndexPath *indexPath in unfilteredIndexPaths) {
-    CGRect rowRect = [self rectForRowAtIndexPath:indexPath];
-    if (CGRectIntersectsRect(rowRect, bounds)) {
-      [visibleIndexPaths addObject:indexPath];
-    }
+  NSIndexPath *pendingVisibleIndexPath = _pendingVisibleIndexPath;
+  if (pendingVisibleIndexPath == nil) {
+    return self.indexPathsForVisibleRows;
   }
   
-  if (_pendingVisibleIndexPath) {
-    NSMutableSet *indexPaths = [NSMutableSet setWithArray:visibleIndexPaths];
-    
-    BOOL (^isAfter)(NSIndexPath *, NSIndexPath *) = ^BOOL(NSIndexPath *indexPath, NSIndexPath *anchor) {
-      if (!anchor || !indexPath) {
-        return NO;
-      }
-      if (indexPath.section == anchor.section) {
-        return (indexPath.row == anchor.row+1); // assumes that indexes are valid
-        
-      } else if (indexPath.section > anchor.section && indexPath.row == 0) {
-        if (anchor.row != [_dataController numberOfRowsInSection:anchor.section] -1) {
-          return NO;  // anchor is not at the end of the section
-        }
-        
-        NSInteger nextSection = anchor.section+1;
-        while([_dataController numberOfRowsInSection:nextSection] == 0) {
-          ++nextSection;
-        }
-        
-        return indexPath.section == nextSection;
-      }
-      
-      return NO;
-    };
-    
-    BOOL (^isBefore)(NSIndexPath *, NSIndexPath *) = ^BOOL(NSIndexPath *indexPath, NSIndexPath *anchor) {
-      return isAfter(anchor, indexPath);
-    };
-    
-    if ([indexPaths containsObject:_pendingVisibleIndexPath]) {
-      _pendingVisibleIndexPath = nil; // once it has shown up in visibleIndexPaths, we can stop tracking it
-    } else if (!isBefore(_pendingVisibleIndexPath, visibleIndexPaths.firstObject) &&
-               !isAfter(_pendingVisibleIndexPath, visibleIndexPaths.lastObject)) {
-      _pendingVisibleIndexPath = nil; // not contiguous, ignore.
-    } else {
-      [indexPaths addObject:_pendingVisibleIndexPath];
-      
-      [visibleIndexPaths removeAllObjects];
-      [visibleIndexPaths addObjectsFromArray:[indexPaths.allObjects sortedArrayUsingSelector:@selector(compare:)]];
-    }
-  }
+  NSMutableArray *visibleIndexPaths = [self.indexPathsForVisibleRows mutableCopy];
+  [visibleIndexPaths sortUsingSelector:@selector(compare:)];
+
+  BOOL isPendingIndexPathVisible = (NSNotFound != [visibleIndexPaths indexOfObject:pendingVisibleIndexPath inSortedRange:NSMakeRange(0, visibleIndexPaths.count) options:kNilOptions usingComparator:^(id  _Nonnull obj1, id  _Nonnull obj2) {
+    return [obj1 compare:obj2];
+  }]);
   
+  if (isPendingIndexPathVisible) {
+    _pendingVisibleIndexPath = nil; // once it has shown up in visibleIndexPaths, we can stop tracking it
+  } else if ([self isIndexPath:visibleIndexPaths.firstObject immediateSuccessorOfIndexPath:pendingVisibleIndexPath]) {
+    [visibleIndexPaths insertObject:pendingVisibleIndexPath atIndex:0];
+  } else if ([self isIndexPath:pendingVisibleIndexPath immediateSuccessorOfIndexPath:visibleIndexPaths.lastObject]) {
+    [visibleIndexPaths addObject:pendingVisibleIndexPath];
+  } else {
+    _pendingVisibleIndexPath = nil; // not contiguous, ignore.
+  }
   return visibleIndexPaths;
 }
 
@@ -1168,6 +1134,32 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 - (void)clearFetchedData
 {
   [_rangeController clearFetchedData];
+}
+
+#pragma mark - Helper Methods
+
+- (BOOL)isIndexPath:(NSIndexPath *)indexPath immediateSuccessorOfIndexPath:(NSIndexPath *)anchor
+{
+  if (!anchor || !indexPath) {
+    return NO;
+  }
+  if (indexPath.section == anchor.section) {
+    return (indexPath.row == anchor.row+1); // assumes that indexes are valid
+    
+  } else if (indexPath.section > anchor.section && indexPath.row == 0) {
+    if (anchor.row != [_dataController numberOfRowsInSection:anchor.section] -1) {
+      return NO;  // anchor is not at the end of the section
+    }
+    
+    NSInteger nextSection = anchor.section+1;
+    while([_dataController numberOfRowsInSection:nextSection] == 0) {
+      ++nextSection;
+    }
+    
+    return indexPath.section == nextSection;
+  }
+  
+  return NO;
 }
 
 #pragma mark - _ASDisplayView behavior substitutions
