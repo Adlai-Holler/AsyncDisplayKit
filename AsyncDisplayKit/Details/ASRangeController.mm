@@ -18,6 +18,8 @@
 #import "ASInternalHelpers.h"
 #import "ASDisplayNode+FrameworkPrivate.h"
 
+#define AS_RANGECONTROLLER_LOG_UPDATE_FREQ 0
+
 @interface ASRangeController ()
 {
   BOOL _rangeIsValid;
@@ -29,6 +31,11 @@
   BOOL _didUpdateCurrentRange;
   BOOL _didRegisterForNotifications;
   CFAbsoluteTime _pendingDisplayNodesTimestamp;
+  
+#if AS_RANGECONTROLLER_LOG_UPDATE_FREQ
+  NSUInteger _updateCountThisFrame;
+  CADisplayLink *_displayLink;
+#endif
 }
 
 @end
@@ -51,11 +58,20 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   
   [[[self class] allRangeControllersWeakSet] addObject:self];
   
+#if AS_RANGECONTROLLER_LOG_UPDATE_FREQ
+  _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(_updateCountDisplayLinkDidFire)];
+  [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+#endif
+  
   return self;
 }
 
 - (void)dealloc
 {
+#if AS_RANGECONTROLLER_LOG_UPDATE_FREQ
+  [_displayLink invalidate];
+#endif
+  
   if (_didRegisterForNotifications) {
     [[NSNotificationCenter defaultCenter] removeObserver:self name:ASRenderingEngineDidDisplayScheduledNodesNotification object:nil];
   }
@@ -152,6 +168,10 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   if (!_layoutController || !_dataSource) {
     return;
   }
+  
+#if AS_RANGECONTROLLER_LOG_UPDATE_FREQ
+  _updateCountThisFrame += 1;
+#endif
   
   // allNodes is a 2D array: it contains arrays for each section, each containing nodes.
   NSArray<NSArray *> *allNodes = [_dataSource completedNodes];
@@ -547,6 +567,16 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
 }
 
 #pragma mark - Debugging
+
+#if AS_RANGECONTROLLER_LOG_UPDATE_FREQ
+- (void)_updateCountDisplayLinkDidFire
+{
+  if (_updateCountThisFrame > 1) {
+    NSLog(@"ASRangeController %p updated %lu times this frame.", self, (unsigned long)_updateCountThisFrame);
+  }
+  _updateCountThisFrame = 0;
+}
+#endif
 
 - (NSString *)descriptionWithIndexPaths:(NSArray<NSIndexPath *> *)indexPaths
 {
