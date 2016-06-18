@@ -1037,15 +1037,20 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   ASPerformBlockWithoutAnimation(!animated, ^{
     [_layoutFacilitator collectionViewWillPerformBatchUpdates];
     [self _updateAnimationWillBegin];
+    __block BOOL animationEnded = NO;
     [super performBatchUpdates:^{
       for (dispatch_block_t block in _batchUpdateBlocks) {
         block();
       }
     } completion:^(BOOL finished){
+      animationEnded = YES;
       [self _updateAnimationDidEnd];
       [self _scheduleCheckForBatchFetchingForNumberOfChanges:numberOfUpdateBlocks];
       if (completion) { completion(finished); }
     }];
+    if (!animationEnded) {
+      [self _updateAnimationDidBegin];
+    }
   });
   
   [_batchUpdateBlocks removeAllObjects];
@@ -1150,6 +1155,15 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
 - (void)_updateAnimationWillBegin
 {
   _updateAnimationCount += 1;
+}
+
+/// NOTE: We don't call this for animations that are suppressed.
+- (void)_updateAnimationDidBegin
+{
+  if (_visibleIndexPathsChangedDuringUpdateAnimation) {
+    _visibleIndexPathsChangedDuringUpdateAnimation = NO;
+    [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:self.scrollDirection];
+  }
 }
 
 - (void)_updateAnimationDidEnd
