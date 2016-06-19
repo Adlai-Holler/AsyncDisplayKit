@@ -974,7 +974,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
 {
   ASDisplayNodeAssertMainThread();
   
-  // Calling visibleNodeIndexPathsForRangeController: will trigger UIKit to call reloadData if it never has, which can result
+  // Calling -indexPathsForVisibleItems will trigger UIKit to call reloadData if it never has, which can result
   // in incorrect layout if performed at zero size.  We can use the fact that nothing can be visible at zero size to return fast.
   BOOL isZeroSized = CGRectEqualToRect(self.bounds, CGRectZero);
   return isZeroSized ? @[] : [self indexPathsForVisibleItems];
