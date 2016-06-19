@@ -225,6 +225,10 @@
 {
   [super visibleStateDidChange:isVisible];
   
+  if (isVisible && self.neverShowPlaceholders) {
+    [self recursivelyEnsureDisplaySynchronously:YES];
+  }
+  
   CGRect cellFrame = CGRectZero;
   if (_scrollView) {
     // It is not safe to message nil with a structure return value, so ensure our _scrollView has not died.

@@ -110,11 +110,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   id<ASCollectionViewLayoutFacilitatorProtocol> _layoutFacilitator;
   
   BOOL _performingBatchUpdates;
-  NSUInteger _updateAnimationCount;
   NSMutableArray *_batchUpdateBlocks;
-  BOOL _superIsLayingOutSubviews;
-  BOOL _visibleIndexPathsChangedDuringLayout;
-  BOOL _visibleIndexPathsChangedDuringUpdateAnimation;
   
   _ASCollectionViewNodeSizeInvalidationContext *_queuedNodeSizeInvalidationContext; // Main thread only
   BOOL _isDeallocating;
@@ -608,11 +604,8 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
     [_asyncDelegate collectionView:self willDisplayNodeForItemAtIndexPath:indexPath];
   }
   
-  [self _markVisibleIndexPathsChange];
+  [_rangeController setNeedsUpdate];
   
-  if (cellNode.neverShowPlaceholders) {
-    [cellNode recursivelyEnsureDisplaySynchronously:YES];
-  }
   if (ASSubclassOverridesSelector([ASCellNode class], [cellNode class], @selector(cellNodeVisibilityEvent:inScrollView:withCellFrame:))) {
     [_cellsForVisibilityUpdates addObject:cell];
   }
@@ -620,14 +613,14 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
 
 - (void)collectionView:(UICollectionView *)collectionView didEndDisplayingCell:(_ASCollectionViewCell *)cell forItemAtIndexPath:(NSIndexPath *)indexPath
 {
-  [self _markVisibleIndexPathsChange];
-  
   ASCellNode *cellNode = [cell node];
 
   if (_asyncDelegateFlags.asyncDelegateCollectionViewDidEndDisplayingNodeForItemAtIndexPath) {
     ASDisplayNodeAssertNotNil(cellNode, @"Expected node associated with removed cell not to be nil.");
     [_asyncDelegate collectionView:self didEndDisplayingNode:cellNode forItemAtIndexPath:indexPath];
   }
+  
+  [_rangeController setNeedsUpdate];
   
   [_cellsForVisibilityUpdates removeObject:cell];
   
@@ -792,14 +785,8 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   }
   
   // To ensure _maxSizeForNodesConstrainedSize is up-to-date for every usage, this call to super must be done last
-  _superIsLayingOutSubviews = YES;
   [super layoutSubviews];
-  _superIsLayingOutSubviews = NO;
-  
-  if (_visibleIndexPathsChangedDuringLayout) {
-    _visibleIndexPathsChangedDuringLayout = NO;
-    [_rangeController visibleNodeIndexPathsDidChange];
-  }
+  [_rangeController updateIfNeeded];
 }
 
 
@@ -1041,21 +1028,18 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   NSUInteger numberOfUpdateBlocks = _batchUpdateBlocks.count;
   ASPerformBlockWithoutAnimation(!animated, ^{
     [_layoutFacilitator collectionViewWillPerformBatchUpdates];
-    [self _updateAnimationWillBegin];
-    __block BOOL animationEnded = NO;
     [super performBatchUpdates:^{
       for (dispatch_block_t block in _batchUpdateBlocks) {
         block();
       }
     } completion:^(BOOL finished){
-      animationEnded = YES;
-      [self _updateAnimationDidEnd];
+      // Flush any range changes that happened as part of the update animations ending.
+      [_rangeController updateIfNeeded];
       [self _scheduleCheckForBatchFetchingForNumberOfChanges:numberOfUpdateBlocks];
       if (completion) { completion(finished); }
     }];
-    if (!animationEnded) {
-      [self _updateAnimationDidBegin];
-    }
+    // Flush any range changes that happened as part of submitting the update.
+    [_rangeController updateIfNeeded];
   });
   
   [_batchUpdateBlocks removeAllObjects];
@@ -1081,9 +1065,9 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
     }];
   } else {
     [UIView performWithoutAnimation:^{
-      [self _updateAnimationWillBegin];
       [super insertItemsAtIndexPaths:indexPaths];
-      [self _updateAnimationDidEnd];
+      // Flush any range changes that happened as part of submitting the update.
+      [_rangeController updateIfNeeded];
       [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexPaths.count];
     }];
   }
@@ -1103,9 +1087,9 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
     }];
   } else {
     [UIView performWithoutAnimation:^{
-      [self _updateAnimationWillBegin];
       [super deleteItemsAtIndexPaths:indexPaths];
-      [self _updateAnimationDidEnd];
+      // Flush any range changes that happened as part of submitting the update.
+      [_rangeController updateIfNeeded];
       [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexPaths.count];
     }];
   }
@@ -1125,9 +1109,9 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
     }];
   } else {
     [UIView performWithoutAnimation:^{
-      [self _updateAnimationWillBegin];
       [super insertSections:indexSet];
-      [self _updateAnimationDidEnd];
+      // Flush any range changes that happened as part of submitting the update.
+      [_rangeController updateIfNeeded];
       [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexSet.count];
     }];
   }
@@ -1147,48 +1131,11 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
     }];
   } else {
     [UIView performWithoutAnimation:^{
-      [self _updateAnimationWillBegin];
       [super deleteSections:indexSet];
-      [self _updateAnimationDidEnd];
+      // Flush any range changes that happened as part of submitting the update.
+      [_rangeController updateIfNeeded];
       [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexSet.count];
     }];
-  }
-}
-
-#pragma mark - Visible Index Path Tracking
-
-- (void)_updateAnimationWillBegin
-{
-  _updateAnimationCount += 1;
-}
-
-/// NOTE: We don't call this for animations that are suppressed.
-- (void)_updateAnimationDidBegin
-{
-  if (_visibleIndexPathsChangedDuringUpdateAnimation) {
-    _visibleIndexPathsChangedDuringUpdateAnimation = NO;
-    [_rangeController visibleNodeIndexPathsDidChange];
-  }
-}
-
-- (void)_updateAnimationDidEnd
-{
-  _updateAnimationCount -= 1;
-  if (_updateAnimationCount == 0 && _visibleIndexPathsChangedDuringUpdateAnimation) {
-    _visibleIndexPathsChangedDuringUpdateAnimation = NO;
-    [_rangeController visibleNodeIndexPathsDidChange];
-  }
-}
-
-/// Called from willDisplayCell: and didEndDisplayingCell:
-- (void)_markVisibleIndexPathsChange
-{
-  if (_superIsLayingOutSubviews) {
-    _visibleIndexPathsChangedDuringLayout = YES;
-  } else if (_updateAnimationCount > 0) {
-    _visibleIndexPathsChangedDuringUpdateAnimation = YES;
-  } else {
-    [_rangeController visibleNodeIndexPathsDidChange];
   }
 }
 
@@ -1248,10 +1195,12 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
     
     ASPerformBlockWithoutAnimation(!_queuedNodeSizeInvalidationContext.shouldAnimate, ^{
       // Perform an empty update transaction here to trigger UICollectionView to requery row sizes and layout its subviews again
-      [self _updateAnimationWillBegin];
       [super performBatchUpdates:^{} completion:^(BOOL finished){
-        [self _updateAnimationDidEnd];
+        // Flush any range changes that happened as part of the update animations ending.
+        [_rangeController updateIfNeeded];
       }];
+      // Flush any range changes that happened as part of submitting the update.
+      [_rangeController updateIfNeeded];
     });
   }
   
@@ -1293,7 +1242,8 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   // Updating the visible node index paths only for not range managed nodes. Range managed nodes will get their
   // their update in the layout pass
   if (![node supportsRangeManagedInterfaceState]) {
-    [_rangeController visibleNodeIndexPathsDidChange];
+    [_rangeController setNeedsUpdate];
+    [_rangeController updateIfNeeded];
   }
 }
 

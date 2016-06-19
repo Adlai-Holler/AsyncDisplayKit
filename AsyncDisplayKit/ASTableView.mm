@@ -114,6 +114,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   BOOL _ignoreNodesConstrainedWidthChange;
   BOOL _queuedNodeHeightUpdate;
   BOOL _isDeallocating;
+  BOOL _performingBatchUpdates;
   NSMutableSet *_cellsForVisibilityUpdates;
   
   struct {
@@ -448,6 +449,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   
   // To ensure _nodesConstrainedWidth is up-to-date for every usage, this call to super must be done last
   [super layoutSubviews];
+  [_rangeController updateIfNeeded];
 }
 
 #pragma mark -
@@ -618,11 +620,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
     [_asyncDelegate tableView:self willDisplayNodeForRowAtIndexPath:indexPath];
   }
   
-  [_rangeController visibleNodeIndexPathsDidChange];
-
-  if (cellNode.neverShowPlaceholders) {
-    [cellNode recursivelyEnsureDisplaySynchronously:YES];
-  }
+  [_rangeController setNeedsUpdate];
   
   if (ASSubclassOverridesSelector([ASCellNode class], [cellNode class], @selector(cellNodeVisibilityEvent:inScrollView:withCellFrame:))) {
     [_cellsForVisibilityUpdates addObject:cell];
@@ -637,7 +635,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   
   ASCellNode *cellNode = [cell node];
 
-  [_rangeController visibleNodeIndexPathsDidChange];
+  [_rangeController setNeedsUpdate];
 
   if (_asyncDelegateFlags.asyncDelegateTableViewDidEndDisplayingNodeForRowAtIndexPath) {
     ASDisplayNodeAssertNotNil(cellNode, @"Expected node associated with removed cell not to be nil.");
@@ -902,6 +900,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
     return; // if the asyncDataSource has become invalid while we are processing, ignore this request to avoid crashes
   }
 
+  _performingBatchUpdates = YES;
   [super beginUpdates];
 
   if (_automaticallyAdjustsContentOffset) {
@@ -927,8 +926,10 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 
   ASPerformBlockWithoutAnimation(!animated, ^{
     [super endUpdates];
+    [_rangeController updateIfNeeded];
   });
 
+  _performingBatchUpdates = NO;
   if (completion) {
     completion(YES);
   }
@@ -951,6 +952,9 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   BOOL preventAnimation = animationOptions == UITableViewRowAnimationNone;
   ASPerformBlockWithoutAnimation(preventAnimation, ^{
     [super insertRowsAtIndexPaths:indexPaths withRowAnimation:(UITableViewRowAnimation)animationOptions];
+    if (!_performingBatchUpdates) {
+      [_rangeController updateIfNeeded];
+    }
     [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexPaths.count];
   });
 
@@ -971,6 +975,9 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   BOOL preventAnimation = animationOptions == UITableViewRowAnimationNone;
   ASPerformBlockWithoutAnimation(preventAnimation, ^{
     [super deleteRowsAtIndexPaths:indexPaths withRowAnimation:(UITableViewRowAnimation)animationOptions];
+    if (!_performingBatchUpdates) {
+      [_rangeController updateIfNeeded];
+    }
     [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexPaths.count];
   });
 
@@ -992,6 +999,9 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   BOOL preventAnimation = animationOptions == UITableViewRowAnimationNone;
   ASPerformBlockWithoutAnimation(preventAnimation, ^{
     [super insertSections:indexSet withRowAnimation:(UITableViewRowAnimation)animationOptions];
+    if (!_performingBatchUpdates) {
+      [_rangeController updateIfNeeded];
+    }
     [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexSet.count];
   });
 }
@@ -1008,6 +1018,9 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   BOOL preventAnimation = animationOptions == UITableViewRowAnimationNone;
   ASPerformBlockWithoutAnimation(preventAnimation, ^{
     [super deleteSections:indexSet withRowAnimation:(UITableViewRowAnimation)animationOptions];
+    if (!_performingBatchUpdates) {
+      [_rangeController updateIfNeeded];
+    }
     [self _scheduleCheckForBatchFetchingForNumberOfChanges:indexSet.count];
   });
 }
@@ -1189,7 +1202,8 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   // Updating the visible node index paths only for not range managed nodes. Range managed nodes will get their
   // their update in the layout pass
   if (![node supportsRangeManagedInterfaceState]) {
-    [_rangeController visibleNodeIndexPathsDidChange];
+    [_rangeController setNeedsUpdate];
+    [_rangeController updateIfNeeded];
   }
 }
 

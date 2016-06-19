@@ -40,10 +40,18 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Notify the range controller that the visible range has been updated.
  * This is the primary input call that drives updating the working ranges, and triggering their actions.
+ * The ranges will be updated in the next turn of the main loop, or when -updateIfNeeded is called.
  *
  * @see [ASRangeControllerDelegate rangeControllerVisibleNodeIndexPaths:]
  */
-- (void)visibleNodeIndexPathsDidChange;
+- (void)setNeedsUpdate;
+
+/**
+ * Update the ranges immediately, if -setNeedsUpdate has been called since the last update.
+ * This is useful because the ranges must be updated immediately after a cell is added
+ * into a table/collection to satisfy interface state API guarantees.
+ */
+- (void)updateIfNeeded;
 
 /**
  * Add the sized node for `indexPath` as a subview of `contentView`.

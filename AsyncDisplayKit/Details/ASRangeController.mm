@@ -108,10 +108,25 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   return selfInterfaceState;
 }
 
-- (void)visibleNodeIndexPathsDidChange
+- (void)setNeedsUpdate
 {
-  // Perform update immediately, so that cells receive a visibilityDidChange: call before their first pixel is visible.
-  [self performRangeUpdateSynchronously:YES];
+  if (!_queuedRangeUpdate) {
+    _queuedRangeUpdate = YES;
+      
+    __weak __typeof__(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [weakSelf updateIfNeeded];
+    });
+  }
+}
+
+- (void)updateIfNeeded
+{
+  if (_queuedRangeUpdate) {
+    _queuedRangeUpdate = NO;
+      
+    [self _updateVisibleNodeIndexPaths];
+  }
 }
 
 - (void)updateCurrentRangeWithMode:(ASLayoutRangeMode)rangeMode
@@ -119,26 +134,8 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   if (_currentRangeMode != rangeMode) {
     _currentRangeMode = rangeMode;
     _didUpdateCurrentRange = YES;
-    
-    [self performRangeUpdateSynchronously:NO];
-  }
-}
 
-- (void)performRangeUpdateSynchronously:(BOOL)updateSynchronously
-{
-  if (updateSynchronously) {
-    ASDisplayNodeAssertMainThread();
-    _queuedRangeUpdate = NO;
-    [self _updateVisibleNodeIndexPaths];
-  } else if (!_queuedRangeUpdate) {
-    _queuedRangeUpdate = YES;
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-      if (_queuedRangeUpdate) {
-        _queuedRangeUpdate = NO;
-        [self _updateVisibleNodeIndexPaths];
-      }
-    });
+    [self setNeedsUpdate];
   }
 }
 
@@ -147,7 +144,8 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   _layoutController = layoutController;
   _layoutControllerImplementsSetVisibleIndexPaths = [_layoutController respondsToSelector:@selector(setVisibleNodeIndexPaths:)];
   if (_layoutController && _queuedRangeUpdate) {
-    [self performRangeUpdateSynchronously:YES];
+    [self setNeedsUpdate];
+    [self updateIfNeeded];
   }
 }
 
@@ -155,7 +153,8 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 {
   _dataSource = dataSource;
   if (_dataSource && _queuedRangeUpdate) {
-    [self performRangeUpdateSynchronously:YES];
+    [self setNeedsUpdate];
+    [self updateIfNeeded];
   }
 }
 
@@ -373,7 +372,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
     [[NSNotificationCenter defaultCenter] removeObserver:self name:ASRenderingEngineDidDisplayScheduledNodesNotification object:nil];
     _didRegisterForNotifications = NO;
     
-    [self performRangeUpdateSynchronously:NO];
+    [self setNeedsUpdate];
   }
 }
 
@@ -519,7 +518,8 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
   for (ASRangeController *rangeController in allRangeControllers) {
     BOOL isDisplay = ASInterfaceStateIncludesDisplay([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isDisplay ? ASLayoutRangeModeMinimum : __rangeModeForMemoryWarnings];
-    [rangeController performRangeUpdateSynchronously:YES];
+    [rangeController setNeedsUpdate];
+    [rangeController updateIfNeeded];
   }
   
 #if ASRangeControllerLoggingEnabled
@@ -541,7 +541,8 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
   __ApplicationState = UIApplicationStateBackground;
   for (ASRangeController *rangeController in allRangeControllers) {
     // Trigger a range update immediately, as we may not be allowed by the system to run the update block scheduled by changing range mode.
-    [rangeController performRangeUpdateSynchronously:YES];
+    [rangeController setNeedsUpdate];
+    [rangeController updateIfNeeded];
   }
   
 #if ASRangeControllerLoggingEnabled
@@ -556,7 +557,8 @@ static ASLayoutRangeMode __rangeModeForMemoryWarnings = ASLayoutRangeModeVisible
   for (ASRangeController *rangeController in allRangeControllers) {
     BOOL isVisible = ASInterfaceStateIncludesVisible([rangeController interfaceState]);
     [rangeController updateCurrentRangeWithMode:isVisible ? ASLayoutRangeModeMinimum : ASLayoutRangeModeVisibleOnly];
-    [rangeController performRangeUpdateSynchronously:YES];
+    [rangeController setNeedsUpdate];
+    [rangeController updateIfNeeded];
   }
   
 #if ASRangeControllerLoggingEnabled
