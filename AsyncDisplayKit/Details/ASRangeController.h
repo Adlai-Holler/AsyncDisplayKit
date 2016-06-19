@@ -41,11 +41,9 @@ NS_ASSUME_NONNULL_BEGIN
  * Notify the range controller that the visible range has been updated.
  * This is the primary input call that drives updating the working ranges, and triggering their actions.
  *
- * @param scrollDirection The current scroll direction of the scroll view.
- *
  * @see [ASRangeControllerDelegate rangeControllerVisibleNodeIndexPaths:]
  */
-- (void)visibleNodeIndexPathsDidChangeWithScrollDirection:(ASScrollDirection)scrollDirection;
+- (void)visibleNodeIndexPathsDidChange;
 
 /**
  * Add the sized node for `indexPath` as a subview of `contentView`.
@@ -100,6 +98,13 @@ NS_ASSUME_NONNULL_BEGIN
  * @returns an array of index paths corresponding to the nodes currently visible onscreen (i.e., the visible range).
  */
 - (NSArray<NSIndexPath *> *)visibleNodeIndexPathsForRangeController:(ASRangeController *)rangeController;
+
+/**
+ * @param rangeController Sender.
+ *
+ * @returns the current scroll direction of the view using this range controller.
+ */
+- (ASScrollDirection)scrollDirectionForRangeController:(ASRangeController *)rangeController;
 
 /**
  * @param rangeController Sender.

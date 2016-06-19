@@ -798,7 +798,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   
   if (_visibleIndexPathsChangedDuringLayout) {
     _visibleIndexPathsChangedDuringLayout = NO;
-    [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:self.scrollDirection];
+    [_rangeController visibleNodeIndexPathsDidChange];
   }
 }
 
@@ -993,6 +993,11 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   return isZeroSized ? @[] : [self indexPathsForVisibleItems];
 }
 
+- (ASScrollDirection)scrollDirectionForRangeController:(ASRangeController *)rangeController
+{
+  return self.scrollDirection;
+}
+
 - (CGSize)viewportSizeForRangeController:(ASRangeController *)rangeController
 {
   ASDisplayNodeAssertMainThread();
@@ -1162,7 +1167,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
 {
   if (_visibleIndexPathsChangedDuringUpdateAnimation) {
     _visibleIndexPathsChangedDuringUpdateAnimation = NO;
-    [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:self.scrollDirection];
+    [_rangeController visibleNodeIndexPathsDidChange];
   }
 }
 
@@ -1171,7 +1176,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   _updateAnimationCount -= 1;
   if (_updateAnimationCount == 0 && _visibleIndexPathsChangedDuringUpdateAnimation) {
     _visibleIndexPathsChangedDuringUpdateAnimation = NO;
-    [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:self.scrollDirection];
+    [_rangeController visibleNodeIndexPathsDidChange];
   }
 }
 
@@ -1183,7 +1188,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   } else if (_updateAnimationCount > 0) {
     _visibleIndexPathsChangedDuringUpdateAnimation = YES;
   } else {
-    [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:self.scrollDirection];
+    [_rangeController visibleNodeIndexPathsDidChange];
   }
 }
 
@@ -1288,7 +1293,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   // Updating the visible node index paths only for not range managed nodes. Range managed nodes will get their
   // their update in the layout pass
   if (![node supportsRangeManagedInterfaceState]) {
-    [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:self.scrollDirection];
+    [_rangeController visibleNodeIndexPathsDidChange];
   }
 }
 

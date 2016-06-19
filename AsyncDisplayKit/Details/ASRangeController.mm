@@ -25,7 +25,6 @@
   BOOL _rangeIsValid;
   BOOL _queuedRangeUpdate;
   BOOL _layoutControllerImplementsSetVisibleIndexPaths;
-  ASScrollDirection _scrollDirection;
   NSSet<NSIndexPath *> *_allPreviousIndexPaths;
   ASLayoutRangeMode _currentRangeMode;
   BOOL _didUpdateCurrentRange;
@@ -109,10 +108,8 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   return selfInterfaceState;
 }
 
-- (void)visibleNodeIndexPathsDidChangeWithScrollDirection:(ASScrollDirection)scrollDirection
+- (void)visibleNodeIndexPathsDidChange
 {
-  _scrollDirection = scrollDirection;
-
   // Perform update immediately, so that cells receive a visibilityDidChange: call before their first pixel is visible.
   [self performRangeUpdateSynchronously:YES];
 }
@@ -178,13 +175,14 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   NSUInteger numberOfSections = [allNodes count];
 
   // TODO: Consider if we need to use this codepath, or can rely on something more similar to the data & display ranges
-  // Example: ... = [_layoutController indexPathsForScrolling:_scrollDirection rangeType:ASLayoutRangeTypeVisible];
+  // Example: ... = [_layoutController indexPathsForScrolling:scrollDirection rangeType:ASLayoutRangeTypeVisible];
   NSArray<NSIndexPath *> *visibleNodePaths = [_dataSource visibleNodeIndexPathsForRangeController:self];
   
   if (visibleNodePaths.count == 0) { // if we don't have any visibleNodes currently (scrolled before or after content)...
     return; // don't do anything for this update, but leave _rangeIsValid == NO to make sure we update it later
   }
   
+  ASScrollDirection scrollDirection = [_dataSource scrollDirectionForRangeController:self];
   [_layoutController setViewportSize:[_dataSource viewportSizeForRangeController:self]];
   
   // the layout controller needs to know what the current visible indices are to calculate range offsets
@@ -217,7 +215,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   if (ASRangeTuningParametersEqualToRangeTuningParameters(parametersFetchData, ASRangeTuningParametersZero)) {
     fetchDataIndexPaths = visibleIndexPaths;
   } else {
-    fetchDataIndexPaths = [_layoutController indexPathsForScrolling:_scrollDirection
+    fetchDataIndexPaths = [_layoutController indexPathsForScrolling:scrollDirection
                                                           rangeMode:rangeMode
                                                           rangeType:ASLayoutRangeTypeFetchData];
   }
@@ -231,7 +229,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   } else if (ASRangeTuningParametersEqualToRangeTuningParameters(parametersDisplay, parametersFetchData)) {
     displayIndexPaths = fetchDataIndexPaths;
   } else {
-    displayIndexPaths = [_layoutController indexPathsForScrolling:_scrollDirection
+    displayIndexPaths = [_layoutController indexPathsForScrolling:scrollDirection
                                                         rangeMode:rangeMode
                                                         rangeType:ASLayoutRangeTypeDisplay];
   }

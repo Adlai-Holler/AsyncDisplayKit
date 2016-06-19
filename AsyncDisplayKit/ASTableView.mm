@@ -618,7 +618,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
     [_asyncDelegate tableView:self willDisplayNodeForRowAtIndexPath:indexPath];
   }
   
-  [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:[self scrollDirection]];
+  [_rangeController visibleNodeIndexPathsDidChange];
 
   if (cellNode.neverShowPlaceholders) {
     [cellNode recursivelyEnsureDisplaySynchronously:YES];
@@ -637,7 +637,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   
   ASCellNode *cellNode = [cell node];
 
-  [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:[self scrollDirection]];
+  [_rangeController visibleNodeIndexPathsDidChange];
 
   if (_asyncDelegateFlags.asyncDelegateTableViewDidEndDisplayingNodeForRowAtIndexPath) {
     ASDisplayNodeAssertNotNil(cellNode, @"Expected node associated with removed cell not to be nil.");
@@ -863,6 +863,11 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
     _pendingVisibleIndexPath = nil; // not contiguous, ignore.
   }
   return visibleIndexPaths;
+}
+
+- (ASScrollDirection)scrollDirectionForRangeController:(ASRangeController *)rangeController
+{
+  return self.scrollDirection;
 }
 
 - (NSArray *)rangeController:(ASRangeController *)rangeController nodesAtIndexPaths:(NSArray *)indexPaths
@@ -1184,7 +1189,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   // Updating the visible node index paths only for not range managed nodes. Range managed nodes will get their
   // their update in the layout pass
   if (![node supportsRangeManagedInterfaceState]) {
-    [_rangeController visibleNodeIndexPathsDidChangeWithScrollDirection:[self scrollDirection]];
+    [_rangeController visibleNodeIndexPathsDidChange];
   }
 }
 
