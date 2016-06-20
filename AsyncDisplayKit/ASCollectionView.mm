@@ -786,7 +786,13 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   
   // To ensure _maxSizeForNodesConstrainedSize is up-to-date for every usage, this call to super must be done last
   [super layoutSubviews];
-  [_rangeController updateIfNeeded];
+  
+  // Update range controller immediately if possible & needed.
+  // Calling -updateIfNeeded: in here with self.window == nil (early in the collection view's life)
+  // may cause UICollectionView data related crashes. We'll update in -didMoveToWindow anyway.
+  if (self.window != nil) {
+    [_rangeController updateIfNeeded];
+  }
 }
 
 
