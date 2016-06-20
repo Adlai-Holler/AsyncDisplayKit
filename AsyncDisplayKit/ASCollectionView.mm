@@ -788,7 +788,7 @@ static NSString * const kCellReuseIdentifier = @"_ASCollectionViewCell";
   [super layoutSubviews];
   
   // Update range controller immediately if possible & needed.
-  // Calling -updateIfNeeded: in here with self.window == nil (early in the collection view's life)
+  // Calling -updateIfNeeded in here with self.window == nil (early in the collection view's life)
   // may cause UICollectionView data related crashes. We'll update in -didMoveToWindow anyway.
   if (self.window != nil) {
     [_rangeController updateIfNeeded];
