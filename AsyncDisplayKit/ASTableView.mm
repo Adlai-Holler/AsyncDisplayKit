@@ -103,8 +103,6 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 
   ASBatchContext *_batchContext;
 
-  NSIndexPath *_pendingVisibleIndexPath;
-
   NSIndexPath *_contentOffsetAdjustmentTopVisibleRow;
   CGFloat _contentOffsetAdjustment;
   
@@ -611,8 +609,6 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 
 - (void)tableView:(UITableView *)tableView willDisplayCell:(_ASTableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath
 {
-  _pendingVisibleIndexPath = indexPath;
-  
   ASCellNode *cellNode = [cell node];
   cellNode.scrollView = tableView;
 
@@ -629,10 +625,6 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 
 - (void)tableView:(UITableView *)tableView didEndDisplayingCell:(_ASTableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath
 {
-  if (ASObjectIsEqual(_pendingVisibleIndexPath, indexPath)) {
-    _pendingVisibleIndexPath = nil;
-  }
-  
   ASCellNode *cellNode = [cell node];
 
   [_rangeController setNeedsUpdate];
@@ -829,38 +821,10 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 - (NSArray *)visibleNodeIndexPathsForRangeController:(ASRangeController *)rangeController
 {
   ASDisplayNodeAssertMainThread();
-  
-  // Calling indexPathsForVisibleRows will trigger UIKit to call reloadData if it never has, which can result
+  // Accessing `indexPathsForVisibleRows` will trigger UIKit to call reloadData if it never has, which can result
   // in incorrect layout if performed at zero size.  We can use the fact that nothing can be visible at zero size to return fast.
-  if (CGRectEqualToRect(self.bounds, CGRectZero)) {
-    return @[];
-  }
-  
-  // NOTE: A prior comment claimed that `indexPathsForVisibleRows` may return extra index paths for grouped-style
-  // tables. This is seen as an acceptable issue for the time being.
-  
-  NSIndexPath *pendingVisibleIndexPath = _pendingVisibleIndexPath;
-  if (pendingVisibleIndexPath == nil) {
-    return self.indexPathsForVisibleRows;
-  }
-  
-  NSMutableArray *visibleIndexPaths = [self.indexPathsForVisibleRows mutableCopy];
-  [visibleIndexPaths sortUsingSelector:@selector(compare:)];
-
-  BOOL isPendingIndexPathVisible = (NSNotFound != [visibleIndexPaths indexOfObject:pendingVisibleIndexPath inSortedRange:NSMakeRange(0, visibleIndexPaths.count) options:kNilOptions usingComparator:^(id  _Nonnull obj1, id  _Nonnull obj2) {
-    return [obj1 compare:obj2];
-  }]);
-  
-  if (isPendingIndexPathVisible) {
-    _pendingVisibleIndexPath = nil; // once it has shown up in visibleIndexPaths, we can stop tracking it
-  } else if ([self isIndexPath:visibleIndexPaths.firstObject immediateSuccessorOfIndexPath:pendingVisibleIndexPath]) {
-    [visibleIndexPaths insertObject:pendingVisibleIndexPath atIndex:0];
-  } else if ([self isIndexPath:pendingVisibleIndexPath immediateSuccessorOfIndexPath:visibleIndexPaths.lastObject]) {
-    [visibleIndexPaths addObject:pendingVisibleIndexPath];
-  } else {
-    _pendingVisibleIndexPath = nil; // not contiguous, ignore.
-  }
-  return visibleIndexPaths;
+  BOOL isZeroSized = CGRectEqualToRect(self.bounds, CGRectZero);
+  return isZeroSized ? @[] : self.indexPathsForVisibleRows;
 }
 
 - (ASScrollDirection)scrollDirectionForRangeController:(ASRangeController *)rangeController
@@ -1151,32 +1115,6 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 - (void)clearFetchedData
 {
   [_rangeController clearFetchedData];
-}
-
-#pragma mark - Helper Methods
-
-- (BOOL)isIndexPath:(NSIndexPath *)indexPath immediateSuccessorOfIndexPath:(NSIndexPath *)anchor
-{
-  if (!anchor || !indexPath) {
-    return NO;
-  }
-  if (indexPath.section == anchor.section) {
-    return (indexPath.row == anchor.row+1); // assumes that indexes are valid
-    
-  } else if (indexPath.section > anchor.section && indexPath.row == 0) {
-    if (anchor.row != [_dataController numberOfRowsInSection:anchor.section] -1) {
-      return NO;  // anchor is not at the end of the section
-    }
-    
-    NSInteger nextSection = anchor.section+1;
-    while([_dataController numberOfRowsInSection:nextSection] == 0) {
-      ++nextSection;
-    }
-    
-    return indexPath.section == nextSection;
-  }
-  
-  return NO;
 }
 
 #pragma mark - _ASDisplayView behavior substitutions
