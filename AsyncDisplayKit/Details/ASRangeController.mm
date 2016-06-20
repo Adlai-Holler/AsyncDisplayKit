@@ -23,7 +23,7 @@
 @interface ASRangeController ()
 {
   BOOL _rangeIsValid;
-  BOOL _queuedRangeUpdate;
+  BOOL _needsRangeUpdate;
   BOOL _layoutControllerImplementsSetVisibleIndexPaths;
   NSSet<NSIndexPath *> *_allPreviousIndexPaths;
   ASLayoutRangeMode _currentRangeMode;
@@ -110,8 +110,8 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 
 - (void)setNeedsUpdate
 {
-  if (!_queuedRangeUpdate) {
-    _queuedRangeUpdate = YES;
+  if (!_needsRangeUpdate) {
+    _needsRangeUpdate = YES;
       
     __weak __typeof__(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -122,8 +122,8 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 
 - (void)updateIfNeeded
 {
-  if (_queuedRangeUpdate) {
-    _queuedRangeUpdate = NO;
+  if (_needsRangeUpdate) {
+    _needsRangeUpdate = NO;
       
     [self _updateVisibleNodeIndexPaths];
   }
@@ -143,8 +143,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 {
   _layoutController = layoutController;
   _layoutControllerImplementsSetVisibleIndexPaths = [_layoutController respondsToSelector:@selector(setVisibleNodeIndexPaths:)];
-  if (_layoutController && _queuedRangeUpdate) {
-    [self setNeedsUpdate];
+  if (layoutController && _dataSource) {
     [self updateIfNeeded];
   }
 }
@@ -152,8 +151,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 - (void)setDataSource:(id<ASRangeControllerDataSource>)dataSource
 {
   _dataSource = dataSource;
-  if (_dataSource && _queuedRangeUpdate) {
-    [self setNeedsUpdate];
+  if (dataSource && _layoutController) {
     [self updateIfNeeded];
   }
 }
